@@ -34,8 +34,8 @@ create_clock -add -name sys_clk_pin -period 83.33 -waveform {0 41.66} [get_ports
 
 ## USB UART
 ## Note: Port names are from the perspoctive of the FPGA.
-#set_property -dict { PACKAGE_PIN L12   IOSTANDARD LVCMOS33 } [get_ports { uart_tx }]; #IO_L6N_T0_D08_VREF_14 Sch=uart_rxd_out
-#set_property -dict { PACKAGE_PIN K15   IOSTANDARD LVCMOS33 } [get_ports { uart_rx }]; #IO_L5N_T0_D07_14 Sch=uart_txd_in
+set_property -dict { PACKAGE_PIN L12   IOSTANDARD LVCMOS33 } [get_ports { uart_tx }]; #IO_L6N_T0_D08_VREF_14 Sch=uart_rxd_out
+set_property -dict { PACKAGE_PIN K15   IOSTANDARD LVCMOS33 } [get_ports { uart_rx }]; #IO_L5N_T0_D07_14 Sch=uart_txd_in
 
 ## Analog Inputs on PIO Pins 32 and 33
 #set_property -dict { PACKAGE_PIN A13   IOSTANDARD LVCMOS33 } [get_ports { vaux5_p }]; #IO_L12P_T1_MRCC_AD5P_15 Sch=ain_p[32]
@@ -55,18 +55,19 @@ set_property -dict { PACKAGE_PIN P1    IOSTANDARD LVCMOS33 } [get_ports { B3 }];
 set_property -dict { PACKAGE_PIN N1    IOSTANDARD LVCMOS33 } [get_ports { B4 }]; #IO_L22N_T3_34 Sch=pio[09]
 set_property -dict { PACKAGE_PIN P14   IOSTANDARD LVCMOS33 } [get_ports { IntLvl3 }]; #IO_L11P_T1_SRCC_14 Sch=pio[16]
 set_property -dict { PACKAGE_PIN P15   IOSTANDARD LVCMOS33 } [get_ports { DSW0 }]; #IO_L11N_T1_SRCC_14 Sch=pio[17]
-set_property -dict { PACKAGE_PIN N13   IOSTANDARD LVCMOS33 } [get_ports { DSW14 }]; #IO_L8N_T1_D12_14 Sch=pio[18]
-set_property -dict { PACKAGE_PIN N15   IOSTANDARD LVCMOS33 } [get_ports { DSW15 }]; #IO_L10N_T1_D15_14 Sch=pio[19]
-set_property -dict { PACKAGE_PIN N14   IOSTANDARD LVCMOS33 } [get_ports { XIOS15 }]; #IO_L10P_T1_D14_14 Sch=pio[20]
-set_property -dict { PACKAGE_PIN M15   IOSTANDARD LVCMOS33 } [get_ports { XIOS }]; #IO_L9N_T1_DQS_D13_14 Sch=pio[21]
+#set_property -dict { PACKAGE_PIN N13   IOSTANDARD LVCMOS33 } [get_ports { DSW14 }]; #IO_L8N_T1_D12_14 Sch=pio[18]
+#set_property -dict { PACKAGE_PIN N15   IOSTANDARD LVCMOS33 } [get_ports { DSW15 }]; #IO_L10N_T1_D15_14 Sch=pio[19]
+#set_property -dict { PACKAGE_PIN N14   IOSTANDARD LVCMOS33 } [get_ports { XIOS15 }]; #IO_L10P_T1_D14_14 Sch=pio[20]
+#set_property -dict { PACKAGE_PIN M15   IOSTANDARD LVCMOS33 } [get_ports { XIOS }]; #IO_L9N_T1_DQS_D13_14 Sch=pio[21]
 #set_property -dict { PACKAGE_PIN M14   IOSTANDARD LVCMOS33 } [get_ports { pio22 }]; #IO_L9P_T1_DQS_14 Sch=pio[22]
-set_property -dict { PACKAGE_PIN L15   IOSTANDARD LVCMOS33 } [get_ports { attached }]; #IO_L4N_T0_D05_14 Sch=pio[23]
-#set_property -dict { PACKAGE_PIN L14   IOSTANDARD LVCMOS33 } [get_ports { reset }]; #IO_L7N_T1_D10_14 Sch=pio[26]
+set_property -dict { PACKAGE_PIN L15   IOSTANDARD LVCMOS33 } [get_ports { model1 }]; #IO_L4N_T0_D05_14 Sch=pio[23]
+set_property PULLUP true [get_ports { model1 }];   # pulled up to true unless grounded by jumper
+set_property -dict { PACKAGE_PIN L14   IOSTANDARD LVCMOS33 } [get_ports { attached }]; #IO_L7N_T1_D10_14 Sch=pio[26]
 #set_property -dict { PACKAGE_PIN K14   IOSTANDARD LVCMOS33 } [get_ports { pio27 }]; #IO_L4P_T0_D04_14 Sch=pio[27]
-#set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports { pio28 }]; #IO_L5P_T0_D06_14 Sch=pio[28]
-#set_property -dict { PACKAGE_PIN L13   IOSTANDARD LVCMOS33 } [get_ports { pio29 }]; #IO_L7P_T1_D09_14 Sch=pio[29]
-#set_property -dict { PACKAGE_PIN M13   IOSTANDARD LVCMOS33 } [get_ports { pio30 }]; #IO_L8P_T1_D11_14 Sch=pio[30]
-#set_property -dict { PACKAGE_PIN J11   IOSTANDARD LVCMOS33 } [get_ports { pio31 }]; #IO_0_14 Sch=pio[31]
+set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports { XIOS }]; #IO_L5P_T0_D06_14 Sch=pio[28]
+set_property -dict { PACKAGE_PIN L13   IOSTANDARD LVCMOS33 } [get_ports { XIOS15 }]; #IO_L7P_T1_D09_14 Sch=pio[29]
+set_property -dict { PACKAGE_PIN M13   IOSTANDARD LVCMOS33 } [get_ports { DSW15 }]; #IO_L8P_T1_D11_14 Sch=pio[30]
+set_property -dict { PACKAGE_PIN J11   IOSTANDARD LVCMOS33 } [get_ports { DSW14 }]; #IO_0_14 Sch=pio[31]
 #set_property -dict { PACKAGE_PIN C5    IOSTANDARD LVCMOS33 } [get_ports { P2 }]; #IO_L5P_T0_34 Sch=pio[40]
 #set_property -dict { PACKAGE_PIN A2    IOSTANDARD LVCMOS33 } [get_ports { P1 }]; #IO_L2N_T0_34 Sch=pio[41]
 set_property -dict { PACKAGE_PIN B2    IOSTANDARD LVCMOS33 } [get_ports { B5 }]; #IO_L2P_T0_34 Sch=pio[42]

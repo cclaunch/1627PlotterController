@@ -9,6 +9,10 @@
 // Target Devices: 
 // Tool Versions: 
 // Description: Driver for 1627 plotter added to IBM 1130, a double SMS card
+//              jumper between pins 25 and 26 to specify 1627 model 2 or Calcomp 563
+//              outputs on serial at 9600 baud, 8 bit no parity 1 stop bit
+//              sends ascii chars 0 or 1 for each of the six command bits
+//              e.g. 010010 cr nl draws both pen left and drum up
 // 
 // Dependencies: 
 // 
@@ -33,17 +37,20 @@ module plottercard(
     input B3,
     input B4,
     input B5,
+    input uart_rx,
+    input attached,
+    input model1,
     output reg down,
     output reg up,
     output reg left,
     output reg right,
     output reg penup,
     output reg pendown,
-    input attached,
     output reg DSW0,
     output reg DSW14,
     output reg DSW15,
-    output reg IntLvl3
+    output reg IntLvl3,
+    output wire uart_tx
     );
     
 //============================ Internal Connections ==================================
@@ -61,6 +68,26 @@ module plottercard(
 `define P9 4'd9 // 9 - drop busy state and end machine
 reg [3:0] plotter_state; // read state machine state variable
 
+// states for the UART data pump
+`define U0  6'd0  // 0 idle waiting for command from main 12.5 state machine
+`define U1  6'd1  // send first character
+`define U2  6'd2  // wait for first to end
+`define U3  6'd3  // send second character
+`define U4  6'd4  // wait for second to end
+`define U5  6'd5  // send third character
+`define U6  6'd6  // wait for first to end
+`define U7  6'd7  // send fourth character
+`define U8  6'd8  // wait for fourth to end
+`define U9  6'd9  // send fifth character
+`define U10 6'd10  // wait for fifth to end
+`define U11 6'd11  // send sixth character
+`define U12 6'd12  // wait for sixth to end
+`define U13 6'd13  // send CR character
+`define U14 6'd14  // wait for CR to end
+`define U15 6'd15  // send NL character
+`define U16 6'd16  // wait for NL to end
+reg [5:0] pump_state; // state machine for data pump
+
 reg [3:0]  metagateXIOW; // de-metastable flops for XIO Write signal
 reg [3:0]  metagateXIOS; // de-metastable flops for XIO Sense DSW signal
 reg [3:0]  metagateXIOS15; // de-metastable flops for XIO Sense DSW Reset 15 signal
@@ -74,19 +101,31 @@ reg [3:0]  metagateB3; // de-metastable flops for B Bit 3 signal
 reg [3:0]  metagateB4; // de-metastable flops for B Bit 4 signal
 reg [3:0]  metagateB5; // de-metastable flops for B Bit 5 signal
 reg [3:0]  metagateattached; // de-metastable flops for plotter attached signal
-reg        goup;
-reg        godown;
-reg        goleft;
-reg        goright;
+reg [3:0]  metafastreset = 4'b0000; // de-metastable flops for reset signal
 reg        downpen;
-reg        raisepen;
+reg        uppen;
 reg        busy;
 reg [19:0]  timer;
 
+reg        uart_send;
+wire       uart_ready;
+wire        uart_clk;
+reg [7:0]   uart_data;
+wire [7:0]  pump_data;
+wire       uart_locked;      
+wire       fifo_full;
+wire       fifo_empty;
+wire       fifo_valid;
+reg [7:0]  send_data;
+reg        get_data = 1'b0;
+reg        push_data = 1'b0;
+reg        fifo_reset = 1'b1;
+reg [7:0]  reset_count;
+reg        emit_one;
 
 //============================ Start of Code =========================================
 
-// clocked logic
+// clocked logic at 12.5MHz
 always @ (posedge clk)
 begin
 
@@ -107,25 +146,23 @@ begin
     metagateB4       <= 4'b0000;
     metagateB5       <= 4'b0000;
     metagateattached <= 4'b0000;
-    goleft           <= 1'b0;
-    goright          <= 1'b0;
-    goup             <= 1'b0;
-    godown           <= 1'b0;
-    downpen          <= 1'b0;
-    raisepen         <= 1'b0;
     up               <= 1'b1;
     down             <= 1'b1;
     left             <= 1'b1;
     right            <= 1'b1;
     penup            <= 1'b1;
     pendown          <= 1'b1;
+    downpen          <= 1'b0;
+    uppen            <= 1'b0;
     timer            <= 20'd0;
     busy             <= 1'b0;
-    IntLvl3          <= 1'b1;
-    DSW0             <= 1'b1;
-    DSW14            <= 1'b1;
-    DSW15            <= 1'b1;
+    IntLvl3          <= 1'b0;
+    DSW0             <= 1'b0;
+    DSW14            <= 1'b0;
+    DSW15            <= 1'b0;
     plotter_state    <= `P0;
+    push_data        <= 1'b0;
+    send_data        <= 8'b0;
   end
   else begin
   
@@ -149,86 +186,96 @@ begin
     `P0: begin     
       // when to move out of idle state (read gate on, sector pulse over and we saw a read or clock bit)
       plotter_state <= (metagateXIOW[3] == 1'b1) && (metagateArea5[3] == 1'b1) && (metagateT6[3] == 1'b1) 
-                        ? `P1 
-                        : `P0;
+                         ? (metagateattached[3] == 1'b0)
+                           // if device not powered on and connected, immediate completion of request
+                           ?  `P9
+                           :  `P1 
+                         : `P0;
+      send_data        <= 8'b0;
+      push_data        <= 1'b0;
      end
 
     // latch up the movement requests
     `P1: begin 
-      goleft          <= ~metagateB4[3];
-      goright         <= ~metagateB3[3];
-      goup            <= ~metagateB2[3];
-      godown          <= ~metagateB1[3];
-      downpen         <= ~metagateB0[3];
-      raisepen        <= ~metagateB5[3];
-      left            <= metagateB4[3];
-      right           <= metagateB3[3];
-      up              <= metagateB2[3];
-      down            <= metagateB1[3];
-      penup           <= metagateB5[3];
-      pendown         <= metagateB0[3];
-      // if device not powered on and connected, immediate completion of request
-      plotter_state   <= metagateattached[3] == 1'b0
-                         ? `P9
-                         : `P2;
-      timer           <= 20'd22800;  // 1.9 ms at 12.5 MHz clock rate
-      busy            <= 1'b1;
+      left             <= metagateB4[3];
+      right            <= metagateB3[3];
+      up               <= metagateB2[3];
+      down             <= metagateB1[3];
+      penup            <= metagateB5[3];
+      pendown          <= metagateB0[3];
+      uppen            <= ~metagateB5[3];
+      downpen          <= ~metagateB0[3];
+      plotter_state    <= `P2;
+      timer            <= model1 == 1'b1
+                         ? 20'd22800  // 1.9 ms at 12.5 MHz clock rate
+                         : 20'd34800;  // 2.9 ms at 12.5 MHz clock rate
+      busy             <= 1'b1;
+      send_data        <= {~metagateB0[3] , ~metagateB1[3] , ~metagateB2[3] , ~metagateB3[3] , ~metagateB4[3] , ~metagateB5[3] , 1'b0 , 1'b0};
+      push_data        <= 1'b1;
      end
 
-    // hold up, down, left or right signals for 1.9 milliseconds
+    // hold all signals 
+    // model 1 for 1.9 milliseconds
+    // model 2 for 2.9 milliseconds
     `P2: begin     
-      timer           <= timer - 1;
-      plotter_state   <= (timer == 0)
+      timer            <= timer - 1;
+      plotter_state    <= (timer == 0)
                          ?  `P3
                          :  `P2;
+      push_data        <= 1'b0;
      end
 
     // drop up, down, left or right signals
     `P3: begin     
-      goleft           <= 1'b0;
-      goright          <= 1'b0;
-      goup             <= 1'b0;
-      godown           <= 1'b0;
       up               <= 1'b1;
       down             <= 1'b1;
       left             <= 1'b1;
       right            <= 1'b1;
       plotter_state    <= `P4;
-      timer            <= 20'd22800;  // 1.9 ms at 12.5 MHz clock rate
+      timer            <= model1 == 1'b1
+                         ? 20'd22800  // 1.9 ms at 12.5 MHz clock rate
+                         : 20'd34800;  // 2.9 ms at 12.5 MHz clock rate
+      push_data        <= 1'b0;
      end
 
-    // wait another 1.9 ms before dropping busy
+    // wait before dropping busy
+    // model 1 for 1.9 milliseconds
+    // model 2 for 2.9 milliseconds
     `P4: begin     
       timer            <= timer - 1;
       plotter_state    <= (timer == 0)
-                          ?  `P5
-                          :  `P4;
+                         ?  `P5
+                         :  `P4;
+      push_data        <= 1'b0;
      end
 
     // exit if no pen movements else wait total of 50 milliseconds
     `P5: begin     
-      plotter_state    <= (downpen == 1'b0 && raisepen == 1'b0)
-                          ?  `P9
-                          :  `P6;
+      plotter_state    <= (downpen == 1'b0 && uppen == 1'b0)
+                         ?  `P9
+                         :  `P6;
       timer            <= 20'd554400;
+      push_data        <= 1'b0;
      end
      
     // wait for remainder of 50 ms before dropping pen mvoements
     `P6: begin     
       timer            <= timer - 1;
       plotter_state    <= (timer == 0)
-                          ?  `P7
-                          :  `P6;
+                         ?  `P7
+                         :  `P6;
+      push_data        <= 1'b0;
      end
 
     // drop pen raise or down command then wait another 50ms
     `P7: begin     
       downpen          <= 1'b0;
-      raisepen         <= 1'b0;
+      uppen            <= 1'b0;
       penup            <= 1'b1;
       pendown          <= 1'b1;
       plotter_state    <= `P8;
       timer            <= 20'd600000;  // 50 ms at 12.5 MHz clock rate
+      push_data        <= 1'b0;
      end
 
     // wait for another 50 ms before dropping busy
@@ -237,45 +284,319 @@ begin
       plotter_state    <= (timer == 0)
                           ?  `P9
                           :  `P8;
+      push_data        <= 1'b0;
      end
 
     // drop busy state and wait for another XIO
     `P9: begin     
+      up                <= 1'b1;
+      down              <= 1'b1;
+      left              <= 1'b1;
+      right             <= 1'b1;
+      penup             <= 1'b1;
+      pendown           <= 1'b1;
+      downpen           <= 1'b0;
+      uppen             <= 1'b0;
       busy              <= 1'b0;
       timer             <= 20'd0;  
       plotter_state     <= `P0;
+      push_data         <= 1'b0;
      end
 
     default: begin
       plotter_state    <= `P0;
+      push_data        <= 1'b0;
     end
 
     endcase
     
     // emit DSW 15 signal during XIO Sense Device on Area 5 (attached and ready to work)
     DSW15 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateattached[3] == 1'b1)
-             ?  1'b0       // turn on bit 15 of DSW
-             :  1'b1;      // not ready
+             ?  1'b1       // turn on bit 15 of DSW
+             :  1'b0;      // not ready
              
     // emit DSW 14 signal during XIO Sense Device on Area 5 (busy)
     DSW14 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && busy == 1'b1)
-             ?  1'b0       // turn on bit 14 of DSW
-             :  1'b1;      // not busy
+             ?  1'b1       // turn on bit 14 of DSW
+             :  1'b0;      // not busy
              
     // emit DSW 0 signal during XIO Sense Device on Area 5 (completed - plotter response set
-    DSW0 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateattached[3] == 1'b1)
-             ?  1'b0       // turn on bit 0 of DSW
-             :  1'b1;      // not requesting IntLvl3
+    DSW0 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && IntLvl3 == 1'b1)
+             ?  1'b1       // turn on bit 0 of DSW
+             :  1'b0;      // not requesting IntLvl3
              
     // turn on Interrupt request when state machine ends
     // turn off when XIO Sense Device for Area 5 with Reset bit 15 set
     // otherwise retain previous state
     IntLvl3 <= (plotter_state == `P9)
-               ?  1'b0
-               :  (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateXIOS15 == 1'b1 && IntLvl3 == 1'b0)
-                  ?  1'b1
+               ?  1'b1
+               :  (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateXIOS15[3] == 1'b1 && IntLvl3 == 1'b1)
+                  ?  1'b0
                   :  IntLvl3;
    end
-end // End of Block   
+end // End of 12.5 MHz Block   
+
+// clocked logic at 100MHz
+always @ (posedge uart_clk)
+begin
+
+  // reset before startup
+  if (uart_locked == 1'b0) begin
+    uart_send <= 1'b0;
+    uart_data <= 8'b0;
+    pump_state <= `U0;
+    get_data <= 1'b0;
+    fifo_reset <= 1'b1;
+    reset_count <= 8'd124;
+    emit_one <= 1'b1;
+  end 
+  else begin
+  
+    fifo_reset <= (reset_count > 8'd64 && reset_count < 8'd116)
+               ? 1'b1
+               : 1'b0;
+
+    reset_count <= reset_count == 8'd0
+                ? 0
+                : reset_count - 1;
+                
+    case(pump_state)
+    
+    // waiting for data from the FIFO (from XIO Write in 12.5MHz machine)
+    `U0: begin     
+      uart_send <= 1'b0;
+      uart_data <= 8'b0;
+      get_data <= reset_count == 8'd0
+                  ? 1'b1
+                  : 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (fifo_valid == 1'b1)
+                 ? `U1
+                 : `U0;
+    end
+    
+    // send ASCII 1 or 0 based on first bit of data from 1130
+    `U1: begin
+      uart_send <= emit_one;
+      uart_data <= (pump_data[7] == 1'b1)
+                ?  8'b00110001
+                :  8'b00110000;
+      get_data <= 1'b0;
+      emit_one <= 1'b0;
+      pump_state <= uart_ready == 1'b0
+                 ? `U2
+                 : `U1;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U2: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U3
+                 : `U2;
+    end
+     
+    // send ASCII 1 or 0 based on second bit of data from 1130
+    `U3: begin
+      uart_send <= emit_one;
+      get_data <= 1'b0;
+      uart_data <= (pump_data[6] == 1'b1)
+                ?  8'b00110001
+                :  8'b00110000;
+      emit_one <= 1'b0;
+      pump_state <= uart_ready == 1'b0
+                 ? `U4
+                 : `U3;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U4: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U5
+                 : `U4;
+    end
+     
+    // send ASCII 1 or 0 based on third bit of data from 1130
+    `U5: begin
+      uart_send <= emit_one;
+      get_data <= 1'b0;
+      uart_data <= (pump_data[5] == 1'b1)
+                ?  8'b00110001
+                :  8'b00110000;
+      emit_one <= 1'b0;
+      pump_state <= uart_ready == 1'b0
+                 ? `U6
+                 : `U5;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U6: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U7
+                 : `U6;
+    end
+     
+    // send ASCII 1 or 0 based on fourth bit of data from 1130
+    `U7: begin
+      uart_send <= emit_one;
+      uart_data <= (pump_data[4] == 1'b1)
+                ?  8'b00110001
+                :  8'b00110000;
+      get_data <= 1'b0;
+      emit_one <= 1'b0;
+      pump_state <= uart_ready == 1'b0
+                 ? `U8
+                 : `U7;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U8: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U9
+                 : `U8;
+    end
+     
+    // send ASCII 1 or 0 based on fifth bit of data from 1130
+    `U9: begin
+      uart_send <= emit_one;
+      uart_data <= (pump_data[3] == 1'b1)
+                ?  8'b00110001
+                :  8'b00110000;
+      get_data <= 1'b0;
+      emit_one <= 1'b0;
+      pump_state <=uart_ready == 1'b0
+                 ?  `U10
+                 :  `U9;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U10: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U11
+                 : `U10;
+    end
+     
+    // send ASCII 1 or 0 based on sixth bit of data from 1130
+    `U11: begin
+      uart_send <= emit_one;
+      get_data <= 1'b0;
+      uart_data <= (pump_data[2] == 1'b1)
+                ?  8'b00110001
+                :  8'b00110000;
+      emit_one <= 1'b0;
+      pump_state <= uart_ready == 1'b0
+                 ? `U12
+                 : `U11;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U12: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U13
+                 : `U12;
+    end
+     
+    // send ASCII CR
+    `U13: begin
+      uart_send <= emit_one;
+      uart_data <= 8'b00001101;
+      get_data <= 1'b0;
+      emit_one <= 1'b0;
+      pump_state <= uart_ready == 1'b0
+                 ? `U14
+                 : `U13;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U14: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U15
+                 : `U14;
+    end
+     
+    // send ASCII NL character
+    `U15: begin
+      uart_send <= emit_one;
+      uart_data <= 8'b00001010;
+      get_data <= 1'b0;
+      emit_one <= 1'b0;
+      pump_state <= uart_ready == 1'b0
+                 ? `U16
+                 : `U15;
+    end
+    
+    // wait until the UART has transmitted this character
+    `U16: begin
+      uart_send <= 1'b0;
+      get_data <= 1'b0;
+      emit_one <= 1'b1;
+      pump_state <= (uart_ready == 1'b1)
+                 ? `U0
+                 : `U16;
+    end
+     
+    default: begin
+      get_data <= 1'b0;
+      uart_send <= 1'b0;    
+      emit_one <= 1'b1;
+      pump_state <= `U0;
+    end
+     
+    endcase
+  end
+end // end of 100 MHz block
+
+UART_TX_CTRL uart (
+.SEND (uart_send),
+.DATA (uart_data),
+.CLK (uart_clk),
+.READY (uart_ready),
+.UART_TX (uart_tx)
+);
+
+// generate 100MHz clock for serial port implementation
+clk_wiz_0 myclk (
+  // Clock out ports  
+  .clk_out1(uart_clk),
+  // Status and control signals               
+  .resetn(DCreset), 
+  .locked(uart_locked),
+ // Clock in ports
+  .clk_in1(clk)
+  );
+
+// FIFO to connect clock domains for serial
+fifo_generator_0 myfifi (
+.rst (fifo_reset),
+.wr_clk (clk),
+.rd_clk (uart_clk),
+.din (send_data),
+.dout (pump_data),
+.rd_en(get_data),
+.wr_en(push_data),
+.full (fifo_full),
+.empty (fifo_empty),
+.valid (fifo_valid)
+);
 
 endmodule
