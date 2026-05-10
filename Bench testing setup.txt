@@ -1,0 +1,125 @@
+Using Arduino Uno driver to bench test the plotter controller card
+
+OVERVIEW
+This code will drive signals that can put the plotter controller card
+through its paces. The Uno produces 5V signals, so level shifting is
+recommended via an open collector buffer chip and pullup resistor.
+
+Six inputs on the analog pin side of the UNO are used with pushbuttons
+to activate one of the actions. They have an internal pullup thus 
+the pushbutton needs to have the input grounded except when pressed.
+
+The reset button will put the card in a reset as occurs when the 1130
+powers up or when the RESET button on the 1130 console is depressed.
+
+The do drum up button will command the plotter to move the drum up one
+position, followed by an XIO Sense Device so that you can verify
+the busy bit (14) is set and operation complete (0) is not set
+in the DSW. The interrupt request output pin of the controller
+card will not go active low until 3.8 ms (5.8 ms when model 2
+jumper is installed). Interrupt request stays low until the
+state is reset by pushing the sense reset button. 
+
+The do raise button will command the plotter to raise pen up off
+the paper, followed by an XIO Sense Device while the plotter
+is still considered busy. The interrupt request pin on the 
+controller card will not go active (drop to low) until 100 
+ms has elapsed. 
+
+The sense button will issue an XIO Sense Device to the plotter
+controller card, with the output pins on the card dropping
+DSW bit 0, DSW bit 14 and DSW bit 15 when those bits of the 
+DSW are a 1. 
+
+The sense reset button will issue an XIO Sense Device to 
+the plotter with the reset bit 15 set in the IOCC. This 
+will reset the interrupt request for level 3 - an output
+pin on the controller card - returning it to logic high. 
+The DSW will not have bit 0 active since the completion 
+was just reset. 
+
+The do pen right and pen lower button will command both
+movements simultaneously. The pen right output pin on the controller
+card will drop low for 1.9 ms (2.9 ms if the model 2 jumper
+is installed on the card) then go back to logic high, but
+the lower pen output pin will stay low for 50 ms. The
+interrupt request pin on the card will not go low (active)
+until 100 ms has passed. 
+
+REQUIREMENTS
+Arduino Uno
+12V power supply
+3V power supply
+-24V power supply
+two open collector hex buffer chips
+method to connect to SLT card pins
+4 pullup resistors 10K 
+Oscilloscope or logic analyzer to see outputs
+the controller card to be tested
+
+OUTPUT PINS ON THE ARDUINO
+0    N/C
+1    N/C
+2    T6
+3    XIO Sense Device
+4    XIO Sense Devices w/Reset 15
+5    DC Reset
+6    B Bit 0
+7    B Bit 1
+8    B Bit 2
+9    B Bit 3
+10   B Bit 4
+11   B Bit 5
+12   XIO Write
+13   Area 5
+
+INPUT PINS ON THE ARDUINO
+buttons on breadboard to Arduino
+with internal pullup activated
+14/A0   reset
+15/A1   do drum up
+16/A2   do raise pen
+17/A3   Sense
+18/A4   Sense reset 15
+19/A5   do pen right and pen lower
+
+OUTPUT PINS ON THE CONTROLLER CARD
+these are of different logic voltage levels. 
+Some require an external pullup resistor.
+
+Interrupt request B09 needs a pullup to 3V
+DSW Bit 0 B10 needs a pullup to 3V
+DSW Bit 14 B04 needs a pullup to 3V
+DSW Bit 15 B05 needs a pullup to 3V
+
+Pen Left J04 is inverted logic, at 12V except 0 when active
+Pen Right G05 is inverted logic, at 12V except 0 when active
+Drum Up J02 is inverted logic, at 12V except 0 when active
+Drum Down J05 is inverted logic, at 12V except 0 when active
+Pen Up D05 is inverted logic, at 12V except 0 when active
+Pen Down D04 is inverted logic, at 12V except 0 when active
+
+The controller card needs 12V supplied to pin G02 and ground
+attached to pins D08 and J08. It will consider the plotter
+to be offline and not ready unless -24V is fed through a 3.9K
+resistor to pin B08. When that voltage through the resistor
+is present, the controller will issue outputs to move
+the plotter pen and drum. DSW bit 15 is logically 1 (0V)
+if no voltage present on B08, logic 0 (3V) if -24 there.
+
+INPUT PINS ON THE CARD
+The attachments from the Arduino are level shifted to 
+3V through the buffer chips in your bench test setup
+
+XIO Write          J12
+Area 5             J10
+T6                 J13
+DC Reset           D12
+Sense Device       D07 and D11
+Sense Reset bit 15 D09
+B bit 0            B03
+B bit 1            D10
+B bit 2            D02
+B bit 3            D13
+B bit 4            D06
+B bit 5            B02
