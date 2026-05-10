@@ -200,7 +200,7 @@ void loop() {
     delay (2000);      // debounce time for my finger on button
   } else if (digitalRead(doboth) == HIGH) {    
     // simulate an XIO Write with two B bits set
-    // B Bit 5 (raise pen off paper) and B Bit 4 (move pen left)
+    // B Bit 0 (lower pen on paper) and B Bit 1 (move pen right)
     // one memory cycle but only activates at T6 clock step
     PORTB |= PIN12; // XIOW
     PORTB |= PIN13; // A5
@@ -262,7 +262,7 @@ void loop() {
     PORTB |= PIN13; // A5
     PORTD &= ~PIN3; // ~XIOS
      PORTB &= ~PIN13; // ~A5
-   Serial.println("Pen left and raised");
+   Serial.println("Pen right and lowered");
     delay (2000);      // debounce time for my finger on button
   } // do nothing if none of the buttons were pushed
 }
