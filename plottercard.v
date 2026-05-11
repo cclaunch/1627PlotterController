@@ -49,7 +49,7 @@ module plottercard(
     output reg DSW0,
     output reg DSW14,
     output reg DSW15,
-    output reg IntLvl3,
+    output wire IntLvl3,
     output wire uart_tx
     );
     
@@ -106,6 +106,7 @@ reg        downpen;
 reg        uppen;
 reg        busy;
 reg [19:0]  timer;
+reg        IntLvl3R;
 
 reg        uart_send;
 wire       uart_ready;
@@ -124,6 +125,9 @@ reg [7:0]  reset_count;
 reg        emit_one;
 
 //============================ Start of Code =========================================
+
+// emit request for interrupt level 3 based on 
+assign IntLvl3  =    IntLvl3R;
 
 // clocked logic at 12.5MHz
 always @ (posedge clk)
@@ -156,7 +160,7 @@ begin
     uppen            <= 1'b0;
     timer            <= 20'd0;
     busy             <= 1'b0;
-    IntLvl3          <= 1'b0;
+    IntLvl3R         <= 1'b0;
     DSW0             <= 1'b0;
     DSW14            <= 1'b0;
     DSW15            <= 1'b0;
@@ -311,9 +315,9 @@ begin
     endcase
     
     // emit DSW 15 signal during XIO Sense Device on Area 5 (attached and ready to work)
-    DSW15 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateattached[3] == 1'b1)
-             ?  1'b1       // turn on bit 15 of DSW
-             :  1'b0;      // not ready
+    DSW15 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateattached[3] == 1'b0)
+             ?  1'b1       // not ready turn on bit 15 of DSW
+             :  1'b0;      // attached, bit 15 is off
              
     // emit DSW 14 signal during XIO Sense Device on Area 5 (busy)
     DSW14 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && busy == 1'b1)
@@ -321,18 +325,18 @@ begin
              :  1'b0;      // not busy
              
     // emit DSW 0 signal during XIO Sense Device on Area 5 (completed - plotter response set
-    DSW0 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && IntLvl3 == 1'b1)
+    DSW0 <= (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && IntLvl3R == 1'b1)
              ?  1'b1       // turn on bit 0 of DSW
              :  1'b0;      // not requesting IntLvl3
              
     // turn on Interrupt request when state machine ends
     // turn off when XIO Sense Device for Area 5 with Reset bit 15 set
     // otherwise retain previous state
-    IntLvl3 <= (plotter_state == `P9)
+    IntLvl3R <= (plotter_state == `P9)
                ?  1'b1
-               :  (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateXIOS15[3] == 1'b1 && IntLvl3 == 1'b1)
+               :  (metagateXIOS[3] == 1'b1 && metagateArea5[3] == 1'b1 && metagateXIOS15[3] == 1'b1)
                   ?  1'b0
-                  :  IntLvl3;
+                  :  IntLvl3R;
    end
 end // End of 12.5 MHz Block   
 
