@@ -1,0 +1,41 @@
+Generating the FPGA project
+
+includes the Digilent supplied file UART_TX_CTRL.vhd to drive the serial output
+but replace two constants with:
+     constant BIT_TMR_MAX : std_logic_vector(13 downto 0) := "00101000101011"; --2603 = (round(100MHz / 38400)) - 1
+     constant BIT_INDEX_MAX : natural := 10;
+
+create a clocking wizard with the following parameters:
+     tab Clocking Options
+          MMCM
+          Frequency Synthesis
+          Phase Alignment
+          Balanced
+          Input Clk primary frequency 12.5 MHz
+
+     tab Output Clocks
+          single 100 MHz clock
+          optional signals reset active low, locked
+
+     no changes to Port Renaming or other tabs
+
+
+create a FIFO Generator with the following parameters:
+     tab Basic
+          native
+          independent clocks builtin FIFO
+
+     tab Native Ports
+          standard FIFO
+          write width 8
+          write depth 512
+          read width 8
+          read depth 512
+          asynchronous reset
+
+     tab Status Flags
+          read clock frequency 100 MHz
+          write clock frequency 12 MHz
+          valid flag active high
+
+     tab 
