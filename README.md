@@ -3,7 +3,8 @@ gate A-C1 in slots M4/M5. The 1627 was an IBM badged version of the Calcomp 565 
 
 This project provides a functional equivalent to that IBM SLT card that can be plugged into the IBM 1130 to add 
 the controller logic so that software can command plotter movements and see its status in the same way as
-the IBM card. 
+the IBM card. PCBWay.com sponsored production of the main printed circuit board 
+during development of this project. The results were excellent.
 
 A connector is built to plug into the 1130 card compartment to wire the plotter into the system, 
 in conjunction with an SMS power paddle card to plug into the SMS power connector block. 
